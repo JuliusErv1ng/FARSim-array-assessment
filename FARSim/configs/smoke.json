@@ -1,0 +1,22 @@
+{
+  "description": "单方向低采样安装测试，不用于科学事例率结论",
+  "response_dir": "responses/default",
+  "output_dir": "outputs/smoke",
+  "driver_args": {
+    "layout-path": "data/layout/gp80/infill.txt",
+    "layout-name": "gp80_infill_smoke",
+    "theta-start": 84, "theta-stop": 84,
+    "phi-start": 0, "phi-stop": 0, "phi-step": 20,
+    "coarse-grid-size": 3, "grid-extent-m": 14000,
+    "max-refine-points": 0, "target-cell-size-m": 30000,
+    "max-safe-sample-points": 100,
+    "workers": 1, "core-samples": 20, "core-margin-m": 5000,
+    "threshold-uv": 6540, "required-antennas": 5,
+    "noise-library-size": 2, "noise-trials": 1,
+    "adc-digital-filter": "iir_fir", "filter-vpeak": true,
+    "vpeak-trigger-channels": "0,1", "l1-trigger-channels": "0,1",
+    "l1-threshold-t1-uv": 6540, "l1-threshold-t2-uv": 4360,
+    "l1-station-jitter-std-uv": 545, "l1-station-jitter-seed": 24680,
+    "seed": 12345
+  }
+}

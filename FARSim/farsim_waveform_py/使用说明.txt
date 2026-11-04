@@ -1,0 +1,35 @@
+﻿FARSim 时域波形与射频触发模块
+
+一、计算流程
+输入能量、粒子、方向和地面位置，计算 FARSim 电场峰值矢量与几何量；由脉宽模型和波形模板合成 Ex(t)、Ey(t)、Ez(t)；计算天线及射频链路响应；进行 ADC 后数字滤波、单站触发与阵列触发统计。
+
+二、模块
+width_model：估计脉冲半高全宽，输入为角距离、簇射极大点距离和粒子类型。
+templates：生成非对称高斯加尾部模板。
+synthesizer：将峰值矢量和几何量合成为三分量时域波形。
+predictor：输入能量、方向和地面位置的预测入口。
+rfchain_adapter：在采样序列对应的傅里叶频点上计算射频正向响应。
+digital_filters：陷波和低通数字滤波。
+voltage_trigger：可配置双阈值、计数、时窗、台站阈值偏移和通道的 L1 触发判据。
+aperture_modes：电场阈值、电压阈值及含噪 L1 的有效接收面积计算。
+io：保存 NPZ 或长表 CSV。
+
+三、波形预测接口
+from farsim_waveform.predictor import FARSimWaveformPredictor
+predictor = FARSimWaveformPredictor(template="ring_blend_kernel_trace")
+prediction = predictor.predict_one(energy_eev=0.316, theta_deg=75.0, phi_deg=45.0, x_m=500.0, y_m=500.0, particle="Iron")
+t_ns = prediction.t_ns
+trace_uv_m = prediction.trace_uv_m
+输出 t_ns 为纳秒时间轴；trace_uv_m 的三列为 Ex、Ey、Ez，单位微伏每米。
+
+四、模板与极性
+ring_blend_kernel_trace 在切伦科夫环附近混合核波形与环区模板：
+w = 0.5 × exp[-0.5 × (|Delta psi| / 0.25度)^2]。
+混合波形为 (1-w)×shape_kernel+w×shape_ring，再进行归一化。
+默认 polarity_sign=-1.0，使电场分量与输入 ZHAireS a*.trace 文件的符号约定一致。
+
+五、数据与触发
+预测读取 FARSim 峰值缓存、xmax2energy.mat 及 models 目录中的训练模板；数据位于上一级 data，训练模板位于本目录 models。
+阵列触发采用 X/Y 通道任一通过的条件。配置中的电压阈值单位为微伏。
+iir_fir 数字滤波包含首个 39 MHz 陷波及低通滤波，通带边缘 115 MHz，阻带边缘 120 MHz。
+批量阵列评估使用上一级 run_rate.py 与 JSON 配置，完整参数见上一级“使用手册.txt”。

@@ -1,0 +1,156 @@
+﻿FARSim 独立软件包：安装、运行和代码对应关系
+
+一、首次使用
+完整解压并保留 02_阵列特性评估/FARSim 下的目录结构。只需要这个软件包，无需验收总目录、MATLAB、原始 ZHAireS 事例或另外复制响应文件。运行环境为 Python 3.11 或 3.12。首次安装 Python 依赖通常需要联网；装好后，计算本身读取本地文件。
+进入 FARSim 文件夹，在终端依次执行：
+  python -m pip install -r requirements.txt
+  python verify_bundle.py
+  python run_rate.py configs/smoke.json --check-only
+  python run_rate.py configs/smoke.json
+Windows 也可双击 FARSim 下的“运行示例.bat”。如使用 Windows 的 Python 启动器，可以把上述 python 换成 py -3.12。macOS 若没有 python 命令，则用 python3。
+verify_bundle.py 按 SHA256SUMS.json 核对交付文件的完整性；check-only 验证配置和响应后退出。普通运行才会写结果。
+单方向示例输出在 FARSim/outputs/smoke。示例使用粗网格和少量芯位，触发效率可以是零；成功完成且生成 MAT 和摘要文件即通过安装检查。重新计算请在配置中指定新的 output_dir；相同输入和配置的中断任务可用 --resume 继续。
+正式运行：直接使用默认 GP80 配置时，无需手动输入数值，也无需另外提供参数文件。在 FARSim 文件夹依次执行：
+  python run_rate.py configs/gp80_rate.json --check-only
+  python run_rate.py configs/gp80_rate.json
+第一条只检查，第二条启动正式计算。默认结果目录为 outputs/gp80_infill_default。建议先完成单方向示例，再启动全角度计算。
+
+如何输入自定义参数
+先将 configs/gp80_rate.json 复制为 configs/gp80_custom.json，用纯文本编辑器打开副本。只改需要调整的字段，其他参数保留原值。路径和通道列表使用双引号，角度、阈值和站数直接写数字。路径相对于 FARSim 目录解析。
+  结果位置：顶层 output_dir。新算例用新目录，例如 "outputs/gp80_custom"。
+  系统响应：顶层 response_dir。默认 "responses/default"，只有更换整套天线和射频响应时才改。
+  阵列布局：driver_args 下的 layout-path。默认 "data/layout/gp80/infill.txt"；更换阵列时填新布局文件路径。
+  天顶角：theta-start、theta-stop，默认 45、88，单位度，按 1° 分箱。
+  方位角：phi-start、phi-stop、phi-step，默认 0、340、20，单位度；不重复包含 360°。
+  电压峰值阈值：threshold-uv，默认 6540，单位 μV。
+  单站 L1 两级阈值：l1-threshold-t1-uv、l1-threshold-t2-uv，默认 6540、4360，单位 μV。
+  最少触发站数：required-antennas，默认 5。
+  触发通道：vpeak-trigger-channels、l1-trigger-channels，默认 "0,1"（X 或 Y）；"1" 表示仅 Y。
+  芯位采样和并行数：core-samples、workers，默认 5000、2；内存紧张时可将 workers 改为 1。
+
+例：只计算天顶角 84°、方位角 0° 这一档
+在 configs/gp80_custom.json 中，将顶层 output_dir 设为 "outputs/gp80_theta84_phi0"。在 driver_args 内，将 theta-start 和 theta-stop 都设为 84，phi-start 和 phi-stop 都设为 0，保留 phi-step 为 20。其他字段照抄原配置。保存后执行：
+  python run_rate.py configs/gp80_custom.json --check-only
+  python run_rate.py configs/gp80_custom.json
+
+粒子比例无需填写。程序从包内读取质子和铁核等权的峰值电场及 Xmax 参考库；配置中的 description 仅用于说明，不改变所用模板。
+
+二、逐步追踪代码
+以下路径均相对于 FARSim。函数名可直接在对应文件中搜索。
+
+1. 检查软件包与响应
+   verify_bundle.py → run_rate.py 的 digest()，核对文件清单。
+   run_rate.py 的 main() 读入 configs/*.json，解析相对路径，并调用 validate_response.py 检查天线有效长度、频率、阻抗、噪声数组和 S 参数格式。随后将包内代码和模型位置传给 drivers/adaptive_rate.py。run_inputs.json 记录本次输入及其哈希，用于检查是否可以续算。
+
+2. 读取布局、设置采样和触发条件
+   drivers/adaptive_rate.py 的 main() 与 _load_or_create_station_offsets() 处理能量、天顶角和方位角网格、站点坐标、阈值和随机种子。farsim_py/src/farsim_py/io_utils.py 的 read_layout_positions() 读取 data/layout 下的站点表。驱动程序按方向建立计算任务。
+
+3. 读取质子／铁核等权模板并预测三分量电场
+   drivers/adaptive_rate.py 的 _run_direction()、_evaluate_points() 调用 farsim_waveform_py/src/farsim_waveform/predictor.py 的 predict_fixed_shower_points()。
+   同文件的 _ensure_library() 读取 data/farsim_equal_prior_four_arm_50_200MHz.mat，交给 farsim_py/src/farsim_py/physics.py 的 field_library_from_cache() 校验权重、角度、半径及电场矩阵。该库由质子和铁核分别取均值后等权合并，包含地磁分量、电荷过剩分量及 Xmax 坐标。旧原始铁核 MAT 随包保留供对照。
+   physics.py 的 rotate_xmax()、shower_to_ground_vector() 完成方向旋转、场分量叠加和地面投影。predictor.py 的 _interpolate_vector_field_many() 求目标位置的三分量峰值，synthesizer.py 的 synthesize_one() 使用峰值和几何信息合成波形。当前阵列入口仍使用原铁核波形形状参数，混合的是参考场与几何。
+
+4. 电场转为 ADC 电压
+   farsim_waveform_py/src/farsim_waveform/rfchain_adapter.py 的 forward_traces_vadc_groups() 调用包内 native_rfchain/batch_forward_rfchain_save_mat.py 的响应计算函数。后者的 load_chain_cache() 读取 responses/default 内的复有效长度、天线阻抗、射频器件和噪声参数；pick_efl_nearest() 按入射方向选取有效长度，voc2vad_inverse_at_freqs() 计算从开路电压到 ADC 的传递。得到 ADC 端三通道电压，单位微伏。
+
+5. 数字滤波、噪声和单站判据
+   drivers/adaptive_rate.py 的 _build_shared_noise_library() 调用 farsim_waveform_py/src/farsim_waveform/aperture_modes.py 的 build_adc_noise_library()；银河噪声积分和实测内部噪声都来自包内。
+   farsim_waveform_py/src/farsim_waveform/digital_filters.py 的 apply_adc_iir_fir() 执行数字滤波。滤波参数由 Python 代码提供。
+   _evaluate_points() 计算信号电压峰值和信号叠加噪声的单站触发判据；_station_l1_trigger_vector() 调用 farsim_waveform_py/src/farsim_waveform/voltage_trigger.py 的 aera_voltage_trigger() 检查波形过阈时序。
+
+6. 统计阵列效率
+   drivers/adaptive_rate.py 的 _safe_adaptive_samples() 在需要的区域细化空间采样；_run_direction() 计算方向内各能量的阈值轮廓与多站触发。_trigger_stats_station_polygons_numba() 和 farsim_py/src/farsim_py/fast_event_rate.py 的 _trigger_stats_triggered_mean_numba() 用于统计随机芯位满足站数要求的比例。
+
+7. 积分并读取输出
+   farsim_py/src/farsim_py/fast_event_rate.py 的 compute_event_rate() 使用 data/Flux.xlsx，按各能量和方向的效率、面积与立体角积分。
+   drivers/adaptive_rate.py 的 main() 写 MAT 和 CSV/JSON 摘要。MAT 的 yita_voltage_threshold 与 yita_l1_noisy 对应两种触发效率，三轴为能量、天顶角、方位角。summarize_results.py 可从结果 MAT 整理能量和角度贡献。
+   续算的中间文件由驱动的 _write_partial()、_read_partial() 管理。切换模板、响应或配置时请使用新的输出目录。
+
+三、参数、响应接口与结果解释
+以下为完整参数说明，可结合上面的调用顺序阅读。
+
+FARSim 阵列触发效率与事例率计算使用手册
+
+1. 功能与计算流程
+输入阵列布局、簇射电场模型、天线及射频响应、噪声与通量，计算三分量电场波形、ADC 电压和数字滤波波形，执行单站及多站触发，统计触发效率并按通量积分得到事例率。
+峰值电场及 Xmax 几何使用质子与铁核等权参考库。两种成分各自平均后，将地磁分量和电荷过剩分量对齐到公共半径，再各按 50% 合并。波形形状仍用 ring_blend_kernel_trace，阵列入口沿用铁核形状参数；程序使用混合参考电场计算触发效率和事例率。默认 LST 为本地恒星时 11:00。
+输入数据在本目录的 data、responses/default 和 farsim_waveform_py/models，已全部提供。入口按自身目录定位输入，无需修改路径。
+
+2. 安装与第一次运行
+建议使用 Python 3.11 或 3.12，建立独立环境。先解压，终端进入工具包目录，执行：
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
+python run_rate.py configs/smoke.json
+Windows 激活环境命令为 .venv\Scripts\activate。程序运行入口会自动设置包内代码、模型和响应路径，无需安装项目包或修改 PYTHONPATH。
+smoke 仅计算一个方向、20 个芯位和极粗网格，用于检查安装和接口。其 daily_rate 只对应这个小角度区间，不能作为阵列总事例率。首次运行包含 Numba 编译和大型响应加载，启动阶段可能数十秒没有进度输出。
+完整预估执行：
+python run_rate.py configs/gp80_rate.json
+只检查输入、不计算：
+python run_rate.py configs/gp80_rate.json --check-only
+中断后继续同一次计算：
+python run_rate.py configs/gp80_rate.json --resume
+配置或任一输入文件发生变化时，续算会被拒绝。新算例必须改 output_dir，不能用旧结果目录混算。参数配置变化后，即使保留了原目录里的 partials，也必须从新的目录计算。
+
+3. 阵列与采样参数怎么改
+复制 configs/gp80_rate.json，编辑后另存为一个新 JSON。路径均相对工具包根目录，绝对路径也可用。output_dir 是结果目录；response_dir 是整套响应文件目录；driver_args 是计算参数。
+layout-path：阵列位置文件。文本文件每行前三列可以为 x、y、z，但程序当前只使用前两列 x、y，单位 m，不能在前面加 DU 编号列。采用以阵列附近为原点的局部坐标；真实高程起伏不参与当前二维芯位抽样。需要地形阵列时不能只追加第三列期待程序自动处理。
+data/layout 内提供 GP80 的 infill、coarse、hybrid 和 elliptic1/2/3，以及 GP65、GP300 布局。layout-name 用于结果命名，不改变物理计算。文件名中的 GP80 不保证文件恰有80行，实际站数以文件行数为准。
+required-antennas=5 表示至少5个探测单元触发，不是6个。默认 X/Y 通道 OR，0、1、2 是零起始通道编号。vpeak-trigger-channels 和 l1-trigger-channels 均为字符串“0,1”。
+workers=2 是保守起点。EFL 文件约1 GB，加载后每个进程还占用模型和中间数组；增加并行数前检查内存。16 GB 内存建议先用1个工作进程。
+core-samples=5000 是每个方向的芯位随机抽样数；core-margin-m=5000 加到阵列最远站的半径上，得到抽样圆半径。采样面积不能只按阵列外接圆面积计算。
+grid-extent-m=14000 是足迹采样的方形半宽；coarse-grid-size=15 是每轴初始采样数；target-cell-size-m=250、max-refine-points=160、max-safe-sample-points=12000 控制自适应加密。接近边界、达到采样上限或大天顶角长足迹时，增大范围并检查收敛。
+theta-start=45、theta-stop=88 对应44个1度积分单元，即45至89度；每个整数是积分单元的下界。phi-start=0、phi-stop=340、phi-step=20 覆盖360度方位。避免同时包含0和360。改变方位步长时应满足完整360度覆盖，局部角度扫描的结果只是局部事例率。
+能量下界固定为 log10(E/eV)=16.0至18.0，步长0.1；最后积分区间为18.0至18.1。信号在0.316 EeV计算并按 E/0.316 EeV 线性放大。更改能量范围要修改 drivers/adaptive_rate.py 的能量网格，并记录配置。
+
+4. 两种输出的含义
+voltage_threshold_daily_rate：信号电压峰值阈值条件下的阵列事例率，day^-1。默认 filter-vpeak=true，使用数字滤波后的 X/Y 波形绝对峰值，threshold-uv=6540，单位微伏，不是微伏每米，也不是 ADC 计数。
+l1_noisy_daily_rate：信号叠加 ADC 端噪声，经当前单站时序触发判据和至少5站条件后的阵列事例率，day^-1。它不是环境噪声偶然触发率，也没有包含实际 DAQ 死时间和后续重建质量筛选效率。
+当前单站判据采用去中值基线后的绝对电压，T1=6540微伏、T2=4360微伏；前后检查窗各100 ns，T2上穿次数1至10，相邻上穿间隔上限25 ns，信号搜索窗为-100至180 ns。详细配置随结果 JSON 保存。
+l1-station-jitter-std-uv=545 表示每站固定阈值偏移的高斯标准差，同一偏移同时加到该站 T1/T2；不是每个事件重新改变阈值。设0可以比较统一阈值。已知各站偏移时可增加 l1-station-jitter-file，提供与阵列行顺序一致的一列微伏数值。
+noise-library-size=256 是复用噪声波形库大小；noise-trials=1 是每个信号的噪声试验次数，不等于256次独立试验。正式统计建议比较 noise-trials=1、4、8，并检查事例率稳定性。自适应细化可用 l1-probability-refine=true；仍需用加密采样做收敛验证。
+默认噪声含银河及实测内部噪声，银河噪声使用适配器默认 LST 11:00；不等于全天平均。全天预估应在适配器层按不同 LST 计算并加权平均。目前 JSON 不提供 LST 扫描入口，不能仅从一个 LST 结果宣称全天平均。
+数字滤波 iir_fir 使用首个39 MHz陷波及71抽头（70阶）FIR低通，通带115 MHz、阻带120 MHz。射频链中已包含的模拟滤波不再乘一次。更换硬件并不自动改变数字滤波参数。
+
+5. 替换系统响应：推荐操作顺序
+在 responses 下复制 default 整个目录，命名为 my_system。保留 default 用于基线比较。将新测量或仿真响应转换为约定格式，替换 my_system 中对应文件。修改新配置 response_dir 为 responses/my_system，output_dir 为新的输出目录。
+python validate_response.py responses/my_system
+先把 smoke 配置也复制一份，改 response_dir 和 output_dir，运行新系统的单方向测试。随后选择数个天顶角/方位做基线与新系统对比，核对波形极性、幅度、时延、峰值与触发概率；最后才跑完整角度扫描。
+检测器响应变化后会重新生成电压、足迹和触发统计，不能沿用旧系统的电压阈值足迹。保持相同布局、种子、阈值、噪声及采样设置可以隔离响应变化的影响；若物理噪声也变化，需要把“只变信号链”和“信号链加新噪声”的比较分开记录。
+
+6. 天线文件接口
+EFL_data.mat：MATLAB常规 MAT 文件，变量 EFL_all，复数形状(221,3,3,181,361)。轴序为频率、输出端口、输入电场分量、天顶角、方位角；有效长度单位 m。Theta=0..180度，Phi=0..360度，freq_ALL=0.030..0.250 GHz，步长0.001 GHz。程序按角度网格取值，不能随意互换端口轴和场分量轴。相位正负、Cartesian分量和端口方向必须与输入电场约定一致。
+Z_ant_3.2m.csv：首行为表头，后面221行、7列，依次为频率MHz，ReZx、ImZx、ReZy、ImZy、ReZz、ImZz，阻抗单位欧姆；频率30..250 MHz、步长1 MHz。文件名中的 3.2m 是参数文件名的一部分，使用时应提供对应天线的阻抗。
+天线更新时通常应同时更新有效长度、端口阻抗及银河噪声积分 PG_ALL_jifen_perminute.mat。有效长度是开路响应，后续链路处理端口负载；不要把已加载的电压响应当开路有效长度再加载一次。
+PG_ALL_jifen_perminute.mat：变量 PG_ALL_jifen，形状(221,3,24,60)，频率、通道、LST小时、分钟。该数组不是任意单位的电压谱；须按原银河噪声积分生成约定重算，不能靠改维度替换。
+Data_save_all_withAM.mat：变量 Data_total_seperate，形状(1,N,4,1024)，N为实测噪声段数；第2至4列为三通道电压，单位V，代码转为微伏。该数据位于已有系统 ADC 端，已含模拟响应。更换硬件后应使用新系统实测内部噪声；不能再把旧ADC端噪声完整乘一遍新的射频增益。
+
+7. RF-chain S参数接口
+所有文件要求 Touchstone v1、频率 Hz、参考阻抗50欧姆、相位度。二端口每行9列，次序 f、S11幅相、S21幅相、S12幅相、S22幅相；一端口每行3列。频率严格递增并覆盖30至250 MHz。
+MA格式文件：balun13in20230612.s2p；balun_before_ad.s2p；MatchingNetworkX.s2p；MatchingNetworkZ.s2p。
+DB格式文件：LNA-X.s2p；cable+Connector.s2p；feb+amfitler+biast.s2p；S_balun_AD.s1p。
+原生链路按固定文件类型解析，不能仅修改文件头就把RI或MHz文件当作满足要求。可用转换工具：
+python convert_touchstone.py 新测量.s2p responses/my_system/LNA-X.s2p
+转换工具会根据目标固定文件名选择DB或MA，将Hz/kHz/MHz/GHz和RI/MA/DB转换；它不覆盖已有文件。先将旧目标文件移到备份，再转换。仅支持每行一个完整频点、显式50欧姆的Touchstone v1；其他格式应从测量软件导出兼容版本。
+现有拓扑是天线侧balun、匹配网络、LNA、电缆、FEB放大滤波、ADC侧balun及ADC负载；X/Y共用 MatchingNetworkX，Z使用 MatchingNetworkZ，当前各通道共用 LNA-X 等后级响应。
+如果新系统改变级联结构、每通道后级不同、测量文件是整链路总传输函数，不能只改某个文件名；需调整 native_rfchain/batch_forward_rfchain_save_mat.py 的 load_chain_cache / ABCD级联部分。现有代码还包含0.3 m、介电常数2.2的参考面电长度修正，更换到已经包含这段长度的测量参考面时应核实，避免重复计入相位。
+validate_response.py 检查尺寸、网格、频率范围与格式，不检查仪器校准、实际单位、参考面或全部大数组数值。通过结构检查后仍要做波形测试。
+
+8. 通量、积分与结果文件
+Flux.xlsx 沿用原项目通量文件。compute_event_rate 读取其前两列，将第二列乘1e24后插值，再除以E^3积分。更换通量时须严格核对该文件的尺度约定，不能直接写入另一个单位的J(E)表格。
+每个能量/角度单元的贡献为通量积分乘触发效率、抽样圆面积、cos(theta)投影、角度单元立体角及86400秒。结果单位为每天。已有参考库的观测环境和地磁场保留原定义；迁移站点时需要相应模型输入，不能仅换阵列坐标。
+结果目录含 console.log、run_inputs.json、partials，以及最终 MAT、summary.csv、summary.json 和图。summary JSON 内的两个 daily_rate 是覆盖配置角度区间的总和。
+MAT 的 yita_voltage_threshold / yita_l1_noisy 为效率；trg_rate_voltage_threshold / trg_rate_l1_noisy 为每个积分单元贡献；数组轴顺序为能量、天顶角、方位角。energy_log10_eV、theta_values、phi_values 给出轴值。
+如需能量、天顶角及方位角贡献表，执行 python summarize_results.py 结果文件.mat，将在结果文件旁生成三个CSV，可直接用Excel打开。工具不覆盖已经存在的同名CSV。
+fire_* 表示对全部芯位平均的触发站数；fire_*_triggered 表示已触发事件的条件平均，不能混用。sample_count 是各方向用于构建响应图的空间采样数，不是通过触发的宇宙线事件数。
+年计数可用每日计数乘有效观测天数，再乘必要的在线效率与后续选择效率。不要默认乘365就代表实际可用重建事件数。
+
+9. 采样精度与参数检查
+先固定响应、布局和种子，在少量代表方向上依次比较：芯位5000/20000、初始网格15/21、细化尺度250/125 m、足迹半宽14/20 km、噪声库256/512、噪声试验1/4/8。然后用几个不同种子重复，报告总率及能量、天顶角分布变化。根据所需精度决定采样量，不把一次运行的数字小数位当作统计精度。
+大天顶角应特别检查足迹是否越出采样方形、芯位抽样圆是否截掉可触发区域。程序未实现独立的大面积纯噪声偶然触发率统计；当前L1计算还包含按信号幅度筛选计算点的门限，弱信号加噪声边缘应做专门敏感性检查。
+替换响应后检查：文件尺寸与网格通过；波形与电压单位一致；端口及电场坐标正确；噪声参考面正确；阈值按电压标定；数字滤波符合目标系统；参数/输入哈希留存；全角度采样收敛。
+
+10. 常见问题
+目录非空：改 output_dir，或对完全相同输入使用 --resume。续算输入不一致：查看 run_inputs.json，确认没有修改模型、响应、布局或代码。没有绘图窗口：程序用无界面后端，图保存到输出目录。
+缺少openpyxl：重新安装 requirements.txt。内存不足：减少 workers，并关闭其他占用内存的程序；不要缩小EFL矩阵轴数来绕过接口。转换后幅度异常：检查DB/MA、Hz/MHz、50欧姆和开路/带负载参考面。
+更换系统后的率变化特别大：先比较相同事例的ADC端电压及噪声RMS，再检查触发阈值，最后比较积分；不要只看最终总率猜测原因。

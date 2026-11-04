@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "farsim-py"
+version = "0.1.0"
+description = "Python reimplementation of the FARSim trigger-rate workflow."
+readme = {file = "使用说明.txt", content-type = "text/plain"}
+requires-python = ">=3.11"
+dependencies = [
+  "h5py>=3.11",
+  "matplotlib>=3.8",
+  "numba>=0.59",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "scipy>=1.13",
+]
+
+[project.scripts]
+farsim-py = "farsim_py.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

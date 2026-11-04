@@ -1,0 +1,20 @@
+﻿FARSim 参数化电场与阵列评估模块
+
+一、功能
+保留簇射平面中 EA、EG 分量的符号，以矢量叠加计算地面电场；结合阵列坐标和阈值计算触发区域、触发效率、平均触发站数、重构误差与事例率。
+
+二、输入
+数据目录包含 position&efield_raw_unfiltered.mat、xmax2energy.mat、通量及阵列位置文件。
+阵列坐标单位为米。电场触发阈值单位为微伏每米。
+
+三、安装与运行
+在验收文件夹运行 python 运行.py 阵列，即可调用包内数据与模型。
+单独安装模块可在 FARSim 根目录执行：python -m pip install -e ./farsim_py。
+
+四、参数与输出
+--threshold：电场触发阈值，单位微伏每米。
+--num-antennas：符合触发所需的最少探测单元数。
+--layout：阵列位置文件。
+--data-root：模型、通量和布局数据的根目录。
+输出为 MATLAB 可读取的 MAT，位于 outputs/<布局文件名>/，文件名含阈值和最少触发站数，例如 gp35_thr109uV_ant5_recons.mat。
+含射频与噪声的电压触发评估通过上一级 run_rate.py 调用，见上一级“使用手册.txt”。

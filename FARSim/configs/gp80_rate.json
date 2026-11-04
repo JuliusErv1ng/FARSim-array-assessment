@@ -1,0 +1,22 @@
+{
+  "description": "质子和铁核等权参考库 GP80 infill 事例率预估；正式统计前做采样收敛检查",
+  "response_dir": "responses/default",
+  "output_dir": "outputs/gp80_infill_default",
+  "driver_args": {
+    "layout-path": "data/layout/gp80/infill.txt",
+    "layout-name": "gp80_infill",
+    "theta-start": 45, "theta-stop": 88,
+    "phi-start": 0, "phi-stop": 340, "phi-step": 20,
+    "coarse-grid-size": 15, "grid-extent-m": 14000,
+    "refine-factor": 3, "max-refine-points": 160,
+    "target-cell-size-m": 250, "max-safe-sample-points": 12000,
+    "workers": 2, "core-samples": 5000, "core-margin-m": 5000,
+    "threshold-uv": 6540, "required-antennas": 5,
+    "noise-library-size": 256, "noise-trials": 1,
+    "adc-digital-filter": "iir_fir", "filter-vpeak": true,
+    "vpeak-trigger-channels": "0,1", "l1-trigger-channels": "0,1",
+    "l1-threshold-t1-uv": 6540, "l1-threshold-t2-uv": 4360,
+    "l1-station-jitter-std-uv": 545, "l1-station-jitter-seed": 24680,
+    "seed": 12345
+  }
+}

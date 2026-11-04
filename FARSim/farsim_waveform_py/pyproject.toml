@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "farsim-waveform"
+version = "0.1.0"
+description = "Time-domain waveform synthesis layer for FARSim RF-chain studies"
+readme = {file = "使用说明.txt", content-type = "text/plain"}
+requires-python = ">=3.10"
+dependencies = [
+  "farsim-py>=0.1.0",
+  "joblib>=1.3",
+  "numpy>=1.24",
+  "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+dev = [
+  "matplotlib>=3.7",
+  "pandas>=2.0",
+]
+
+[project.scripts]
+farsim-waveform-demo = "farsim_waveform.cli:main"
+farsim-api = "farsim_waveform.api_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

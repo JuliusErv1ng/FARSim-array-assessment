@@ -1,0 +1,5 @@
+﻿FARSim 阵列特性评估独立软件包
+完整使用手册：FARSim/使用手册.txt
+运行环境：Python 3.11 或 3.12，并安装 FARSim/requirements.txt 所列依赖。
+在 FARSim 目录执行 python verify_bundle.py 检查交付文件，执行 python run_rate.py configs/smoke.json 运行单方向示例。Windows 可以双击 FARSim/运行示例.bat。
+模型、布局、通量、噪声和射频响应均在 FARSim 内，程序按自身位置定位，无需修改路径。
